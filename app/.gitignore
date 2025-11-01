@@ -1,0 +1,12 @@
+# outputs, caches, models (don't push big binaries by accident)
+output/
+logs/
+mcr_cache/
+MATLAB_Runtime_R*
+*.zip
+*.exe
+models/
+app/energy_agent/models/
+__pycache__/
+*.pyc
+.vscode/
