@@ -1,6 +1,6 @@
 # outputs, caches, models (don't push big binaries by accident)
-output/
-logs/
+# output/
+# logs/
 mcr_cache/
 MATLAB_Runtime_R*
 *.zip
