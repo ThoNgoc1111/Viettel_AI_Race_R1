@@ -10,3 +10,4 @@ app/energy_agent/models/
 __pycache__/
 *.pyc
 .vscode/
+app/MATLAB_Runtime_R2025a_Update_1_glnxa64.zip
