@@ -1,66 +1,69 @@
 import numpy as np
 
 class StateNormalizer:
-    """Handles state normalization with running statistics"""
+    """
+    Handles state normalization using static Min-Max bounds.
+    Normalizes all state features to the [0, 1] range.
+    """
     
-    def __init__(self, state_dim, epsilon=1e-8, n_cells=10):
+    def __init__(self, state_dim, n_cells=10):
         self.state_dim = state_dim
-        self.epsilon = epsilon
         self.n_cells = n_cells
+        
 
         # Simulation features normalization bounds (first 17 features)
         self.simulation_bounds = {
-            'totalCells': [1, 50],               # number of cells
-            'totalUEs': [1, 500],                # number of UEs
-            'simTime': [600, 3600],              # simulation time
-            'timeStep': [1, 10],                 # time step
-            'timeProgress': [0, 1],              # progress ratio
-            'carrierFrequency': [700e6, 6e9],    # frequency Hz
-            'isd': [100, 2000],                  # inter-site distance
-            'minTxPower': [0, 46],               # dBm
-            'maxTxPower': [0, 46],              # dBm
-            'basePower': [100, 100000],            # watts
-            'idlePower': [50, 50000],              # watts
-            'dropCallThreshold': [1, 10],        # percentage
-            'latencyThreshold': [10, 100],       # ms
-            'cpuThreshold': [70, 95],            # percentage
-            'prbThreshold': [70, 95],            # percentage
-            'trafficLambda': [0.1, 10],          # traffic rate
-            'peakHourMultiplier': [1, 5]         # multiplier
+            'totalCells': [1, 50],          # number of cells
+            'totalUEs': [1, 500],           # number of UEs
+            'simTime': [600, 3600],         # simulation time
+            'timeStep': [1, 10],            # time step
+            'timeProgress': [0, 1],         # progress ratio
+            'carrierFrequency': [700e6, 6e9],   # frequency Hz
+            'isd': [100, 2000],             # inter-site distance
+            'minTxPower': [0, 46],          # dBm
+            'maxTxPower': [0, 46],          # dBm
+            'basePower': [100, 100000],       # watts
+            'idlePower': [50, 50000],         # watts
+            'dropCallThreshold': [1, 10],   # percentage
+            'latencyThreshold': [10, 100],  # ms
+            'cpuThreshold': [70, 95],       # percentage
+            'prbThreshold': [70, 95],       # percentage
+            'trafficLambda': [0.1, 10],     # traffic rate
+            'peakHourMultiplier': [1, 5]    # multiplier
         }
         
         # Network features normalization bounds (next 14 features)
         self.network_bounds = {
-            'totalEnergy': [0, 10000],           # kWh
-            'activeCells': [0, 50],              # number of cells
-            'avgDropRate': [0, 20],              # percentage
-            'avgLatency': [0, 200],              # ms
-            'totalTraffic': [0, 5000],           # traffic units
-            'connectedUEs': [0, 500],            # number of UEs
-            'connectionRate': [0, 100],         # percentage
-            'cpuViolations': [0, 10000],            # number of violations
-            'prbViolations': [0, 10000],            # number of violations
-            'maxCpuUsage': [0, 100],             # percentage
-            'maxPrbUsage': [0, 100],             # percentage
-            'kpiViolations': [0, 10000],          # number of violations
-            'totalTxPower': [0, 1000],           # total power
-            'avgPowerRatio': [0, 1]              # ratio
+            'totalEnergy': [0, 10000],      # kWh
+            'activeCells': [0, 50],         # number of cells
+            'avgDropRate': [0, 20],         # percentage
+            'avgLatency': [0, 200],         # ms
+            'totalTraffic': [0, 5000],      # traffic units
+            'connectedUEs': [0, 500],       # number of UEs
+            'connectionRate': [0, 100],     # percentage 
+            'cpuViolations': [0, 10000],      # number of violations
+            'prbViolations': [0, 10000],      # number of violations
+            'maxCpuUsage': [0, 100],        # percentage
+            'maxPrbUsage': [0, 100],        # percentage
+            'kpiViolations': [0, 10000],      # number of violations 
+            'totalTxPower': [0, 1000],      # total power
+            'avgPowerRatio': [0, 1]         # ratio
         }
         
         # Cell features normalization bounds (12 features per cell)
         self.cell_bounds = {
-            'cpuUsage': [0, 100],                # percentage
-            'prbUsage': [0, 100],                # percentage
-            'currentLoad': [0, 1000],            # load units
-            'maxCapacity': [0, 1000],            # capacity units
-            'numConnectedUEs': [0, 50],          # number of UEs
-            'txPower': [0, 46],                  # dBm
-            'energyConsumption': [0, 5000],      # watts
-            'avgRSRP': [-140, -70],              # dBm
-            'avgRSRQ': [-20, 0],                 # dB
-            'avgSINR': [-10, 30],                # dB
-            'totalTrafficDemand': [0, 500],      # traffic units
-            'loadRatio': [0, 1]                  # ratio
+            'cpuUsage': [0, 100],           # percentage
+            'prbUsage': [0, 100],           # percentage
+            'currentLoad': [0, 1000],       # load units
+            'maxCapacity': [0, 1000],       # capacity units
+            'numConnectedUEs': [0, 50],     # number of UEs
+            'txPower': [0, 46],             # dBm
+            'energyConsumption': [0, 5000], # watts
+            'avgRSRP': [-140, -70],         # dBm
+            'avgRSRQ': [-20, 0],            # dB
+            'avgSINR': [-10, 30],           # dB
+            'totalTrafficDemand': [0, 500], # traffic units
+            'loadRatio': [0, 1]             # ratio
         }
     
     def normalize(self, state_vector):
@@ -68,12 +71,12 @@ class StateNormalizer:
         Normalize state vector to [0, 1] range
         
         State structure:
-        [sim_1, ..., sim_17,              # Index 0-16 (17 features)
-         net_1, ..., net_14,              # Index 17-30 (14 features)
-         c1_f1, c2_f1, ..., cn_f1,       # cpuUsage for all cells
-         c1_f2, c2_f2, ..., cn_f2,       # prbUsage for all cells
-         ...                              # etc for all 12 cell features
-         c1_f12, c2_f12, ..., cn_f12]    # loadRatio for all cells
+        [sim_1, ..., sim_17,          # Index 0-16 (17 features)
+         net_1, ..., net_14,          # Index 17-30 (14 features)
+         c1_f1, c2_f1, ..., cn_f1,    # cpuUsage for all cells
+         c1_f2, c2_f2, ..., cn_f2,    # prbUsage for all cells
+         ...                          # etc for all 12 cell features
+         c1_f12, c2_f12, ..., cn_f12] # loadRatio for all cells
         """
         normalized = np.zeros_like(state_vector)
         
@@ -114,5 +117,18 @@ class StateNormalizer:
             return 0.5  # Default middle value
         return np.clip((value - min_val) / (max_val - min_val), 0.0, 1.0)
     
-    def update_stats(self, state_vector):
-        pass
+
+    def get_state(self):
+        """
+        Return pre-saved normalizer.
+        Because this normalizer is static, there is no state to save.
+        """
+        return {} 
+
+    def set_state(self, state_dict):
+        """
+        Restore the state of the normalizer.
+        Khôi phục trạng thái của normalizer.
+        Because this normalizer is static, there is no state to save.
+        """
+        pass 

@@ -45,9 +45,9 @@ class RLAgent:
         self.lambda_gae = 0.95
         self.clip_epsilon = 0.2
         # Smaller number of epochs and larger batch size to stabilize updates
-        self.ppo_epochs = 4
-        self.batch_size = 128
-        self.buffer_size = 2048
+        self.ppo_epochs = 10
+        self.batch_size = 256
+        self.buffer_size = 4096
 
         # Experience buffer
         self.buffer = TransitionBuffer(self.buffer_size)
@@ -71,20 +71,25 @@ class RLAgent:
         self.logger.info(f"PPO Agent initialized: {n_cells} cells, {n_ues} UEs")
 
         # Auto-load pretrained model if MODEL_PATH env var is set (keeps runtime flexible)
-        try:
-            model_path = os.environ.get('MODEL_PATH')
-            if model_path:
-                if os.path.isfile(model_path):
-                    self.logger.info(f"MODEL_PATH env var set: loading model from {model_path}")
-                    try:
-                        self.load_model(model_path, eval_mode=True)
-                    except Exception as e:
-                        self.logger.warning(f"Failed to auto-load model from {model_path}: {e}")
-                else:
-                    self.logger.warning(f"MODEL_PATH is set but file not found: {model_path}")
-        except Exception:
-            # Keep initialization robust even if env probe fails
-            pass
+        # current saved trained final model absolute path
+        agent_dir = os.path.dirname(os.path.abspath(__file__))
+        
+        model_name = 'final_model.pth' # <<< replace with final submission model name if different
+        submission_model_path = os.path.join(agent_dir, model_name)
+
+        if os.path.isfile(submission_model_path):
+            self.logger.info(f"Loading SUBMISSION model from {submission_model_path}")
+            try:
+                # Load model và set evaluation_mode=True
+                self.load_model(submission_model_path, eval_mode=True)
+            except Exception as e:
+                self.logger.error(f"FATAL: Failed to load submission model: {e}")
+                # Nếu không load được, vẫn set eval mode
+                self.set_evaluation_mode()
+        else:
+            self.logger.error(f"FATAL: SUBMISSION MODEL NOT FOUND at {submission_model_path}")
+            # Nếu không tìm thấy model, vẫn set eval mode
+            self.set_evaluation_mode()
 
     def setup_logging(self, log_file):
         self.logger = logging.getLogger('PPOAgent')
@@ -214,27 +219,31 @@ class RLAgent:
         # Hard violation if normalized KPI goes beyond near-1 (saturated/invalid)
         if drop_norm >= 0.995 or lat_norm >= 0.995 or cpu_norm >= 0.995 or prb_norm >= 0.995:
             self.any_violation = True
-            return -100.0 * penalty_scale
+            return -100.0 * penalty_scale # Phạt nặng nếu vi phạm hoàn toàn
 
-        # Energy saving term (higher energy_delta -> positive reward)
+        # Increase reward (ví dụ: * 500.0)
         energy_delta = prev_energy - curr_energy
-        energy_term = energy_delta * 10.0
+        energy_term = energy_delta * 500.0 
 
-        # Soft penalties applied when normalized KPI exceeds a stricter threshold
-        # (ramp earlier and more strongly to avoid KPI violations)
+        # Use square reward functon (smoother but grows faster)
+        # Penalize when exceeding 85%
+        threshold = 0.85
         penalty = 0.0
-        penalty += 100.0 * max(0.0, drop_norm - 0.85)
-        penalty += 100.0 * max(0.0, lat_norm - 0.85)
-        penalty += 40.0 * max(0.0, cpu_norm - 0.85)
-        penalty += 40.0 * max(0.0, prb_norm - 0.85)
+        # Update better penalty coefficients
+        penalty += 200.0 * (max(0.0, drop_norm - threshold) ** 2)
+        penalty += 200.0 * (max(0.0, lat_norm - threshold) ** 2)
+        # Phạt tài nguyên có thể nhẹ hơn, ví dụ 80.0
+        penalty += 80.0 * (max(0.0, cpu_norm - threshold) ** 2)
+        penalty += 80.0 * (max(0.0, prb_norm - threshold) ** 2)
+        
         penalty *= penalty_scale
 
         # Smoothness: penalize big changes from previous action (if available)
         prev_action = getattr(self, 'last_action', action)
-        action_smooth_pen = 5.0 * np.mean(np.abs(action - prev_action))
+        action_smooth_pen = 5.0 * np.mean(np.abs(action - prev_action)) # keep small
 
         reward = energy_term - penalty - action_smooth_pen
-        return float(np.clip(reward, -500.0, 100.0))
+        return float(np.clip(reward, -500.0, 500.0)) # Clip reward
 
     # ---------- Update ----------
     def update(self, state, action, next_state, done):
@@ -383,16 +392,23 @@ class RLAgent:
         self.buffer.clear()
         self.logger.info(f"Training completed: Actor loss={actor_loss:.4f}, Critic loss={critic_loss:.4f}")
 
-    # ---------- Save/Load ----------
+    # ---------- Save/Load Model ----------
     def save_model(self, filepath=None):
         if filepath is None:
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             filepath = f"ppo_model_{timestamp}.pth"
+        
+        # Get normalizer state
+        normalizer_state = {}
+        if hasattr(self, 'state_normalizer') and hasattr(self.state_normalizer, 'get_state'):
+             normalizer_state = self.state_normalizer.get_state()
+        
         checkpoint = {
             'actor_state_dict': self.actor.state_dict(),
             'critic_state_dict': self.critic.state_dict(),
             'actor_optimizer_state_dict': self.actor_optimizer.state_dict(),
             'critic_optimizer_state_dict': self.critic_optimizer.state_dict(),
+            'state_normalizer_state': normalizer_state,  # <-- ĐÃ THÊM VÀO
             'total_episodes': self.total_episodes,
             'total_steps': self.total_steps
         }
@@ -403,6 +419,18 @@ class RLAgent:
         checkpoint = torch.load(filepath, map_location=self.device)
         self.actor.load_state_dict(checkpoint['actor_state_dict'])
         self.critic.load_state_dict(checkpoint['critic_state_dict'])
+
+        # load normalizer state if available
+        if hasattr(self, 'state_normalizer') and 'state_normalizer_state' in checkpoint and hasattr(self.state_normalizer, 'set_state'):
+            if checkpoint['state_normalizer_state']: # Only load if not empty
+                self.state_normalizer.set_state(checkpoint['state_normalizer_state'])
+                self.logger.info("StateNormalizer state loaded.")
+            else:
+                self.logger.warning("StateNormalizer state was empty in checkpoint, not loading.")
+        else:
+            self.logger.warning("StateNormalizer state not found in checkpoint or set_state not available.")
+        
+
         # load optimizers state if available, otherwise keep existing optimizers
         try:
             self.actor_optimizer.load_state_dict(checkpoint['actor_optimizer_state_dict'])
