@@ -70,36 +70,27 @@ class RLAgent:
         self.setup_logging(log_file)
         self.logger.info(f"PPO Agent initialized: {n_cells} cells, {n_ues} UEs")
 
-        # Auto-load pretrained model if MODEL_PATH env var is set (keeps runtime flexible)
-        # current saved trained final model absolute path
+        # --- THIS IS THE REVERTED "EVALUATION" CODE ---
+        # It looks for final_model.pth and sets eval_mode=True
         agent_dir = os.path.dirname(os.path.abspath(__file__))
         
         model_name = 'final_model.pth' # <<< replace with final submission model name if different
         submission_model_path = os.path.join(agent_dir, model_name)
 
-        agent_dir = os.path.dirname(os.path.abspath(__file__))
-        
-        # --- MODIFIED FOR TRAINING ---
-        self.logger.warning("Agent is starting in FORCED TRAINING mode.")
-        self.set_training_mode(True)
-        # --- END OF MODIFICATION ---
-
-        model_name = 'final_model.pth' # <<< replace with final submission model name if different
-        submission_model_path = os.path.join(agent_dir, model_name)
-        
         if os.path.isfile(submission_model_path):
             self.logger.info(f"Loading SUBMISSION model from {submission_model_path}")
-        try:
-        # Load model and set evaluation_mode=True
-            self.load_model(submission_model_path, eval_mode=True)
-        except Exception as e:
-            self.logger.error(f"FATAL: Failed to load submission model: {e}")
-        # If cannot load, still set eval mode
-            self.set_evaluation_mode()
+            try:
+                # Load model and set evaluation_mode=True
+                self.load_model(submission_model_path, eval_mode=True)
+            except Exception as e:
+                self.logger.error(f"FATAL: Failed to load submission model: {e}")
+                # If cannot load, still set eval mode
+                self.set_evaluation_mode()
         else:
-        self.logger.error(f"FATAL: SUBMISSION MODEL NOT FOUND at {submission_model_path}")
-        # If cannot load, still set eval mode
+            self.logger.error(f"FATAL: SUBMISSION MODEL NOT FOUND at {submission_model_path}")
+            # If cannot load, still set eval mode
             self.set_evaluation_mode()
+        # --- END OF REVERTED CODE ---
 
     def setup_logging(self, log_file):
         self.logger = logging.getLogger('PPOAgent')
@@ -140,17 +131,22 @@ class RLAgent:
 
         # Auto-save a checkpoint periodically so training runs inside containers
         # can persist models to a mounted folder. Save every 10 episodes.
+        # (This block will be skipped in eval_mode, which is what we want)
         try:
             if self.training_mode and (self.total_episodes % 10 == 0):
                 save_dir = '/app/energy_agent/models'
                 # ensure directory exists if running inside container
                 import os as _os
+                # We are leaving the directory creation fix in, as it's harmless
+                _os.makedirs(save_dir, exist_ok=True) 
+                
                 if _os.path.isdir(save_dir):
                     save_path = _os.path.join(save_dir, f'ppo_autosave_ep{self.total_episodes}.pth')
                     self.save_model(save_path)
                     self.logger.info(f'Auto-saved model to {save_path}')
-        except Exception as _:
-            # Non-fatal if saving fails (e.g., not running in container or permission issues)
+        except Exception as e:
+            # Non-fatal if saving fails
+            self.logger.error(f"Could not auto-save model: {e}")
             pass
 
 
@@ -170,6 +166,7 @@ class RLAgent:
                 log_prob = dist.log_prob(action).sum(-1)
             else:
                 # deterministic evaluation or non-training -> use mean
+                # This 'else' block will now be used
                 action = action_mean
                 log_prob = torch.zeros(1).to(self.device)
 
@@ -257,8 +254,10 @@ class RLAgent:
 
     # ---------- Update ----------
     def update(self, state, action, next_state, done):
+        # This will now be FALSE, so this function will do nothing
         if not self.training_mode:
             return
+            
         reward = self.calculate_reward(state, action, next_state)
         self.episode_steps += 1
         self.total_steps += 1
@@ -480,5 +479,3 @@ class RLAgent:
             'violations': self.violation_counts,
             'any_violation': self.any_violation
         }
-
-
