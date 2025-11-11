@@ -98,7 +98,7 @@ class RLAgent:
             self.set_evaluation_mode()
         else:
         self.logger.error(f"FATAL: SUBMISSION MODEL NOT FOUND at {submission_model_path}")
-        # Nếu không tìm thấy model, vẫn set eval mode
+        # If cannot load, still set eval mode
             self.set_evaluation_mode()
 
     def setup_logging(self, log_file):
@@ -480,4 +480,5 @@ class RLAgent:
             'violations': self.violation_counts,
             'any_violation': self.any_violation
         }
+
 
