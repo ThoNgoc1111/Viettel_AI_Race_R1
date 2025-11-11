@@ -77,18 +77,28 @@ class RLAgent:
         model_name = 'final_model.pth' # <<< replace with final submission model name if different
         submission_model_path = os.path.join(agent_dir, model_name)
 
+        agent_dir = os.path.dirname(os.path.abspath(__file__))
+        
+        # --- MODIFIED FOR TRAINING ---
+        self.logger.warning("Agent is starting in FORCED TRAINING mode.")
+        self.set_training_mode(True)
+        # --- END OF MODIFICATION ---
+
+        model_name = 'final_model.pth' # <<< replace with final submission model name if different
+        submission_model_path = os.path.join(agent_dir, model_name)
+        
         if os.path.isfile(submission_model_path):
             self.logger.info(f"Loading SUBMISSION model from {submission_model_path}")
-            try:
-                # Load model và set evaluation_mode=True
-                self.load_model(submission_model_path, eval_mode=True)
-            except Exception as e:
-                self.logger.error(f"FATAL: Failed to load submission model: {e}")
-                # Nếu không load được, vẫn set eval mode
-                self.set_evaluation_mode()
+        try:
+        # Load model and set evaluation_mode=True
+            self.load_model(submission_model_path, eval_mode=True)
+        except Exception as e:
+            self.logger.error(f"FATAL: Failed to load submission model: {e}")
+        # If cannot load, still set eval mode
+            self.set_evaluation_mode()
         else:
-            self.logger.error(f"FATAL: SUBMISSION MODEL NOT FOUND at {submission_model_path}")
-            # Nếu không tìm thấy model, vẫn set eval mode
+        self.logger.error(f"FATAL: SUBMISSION MODEL NOT FOUND at {submission_model_path}")
+        # Nếu không tìm thấy model, vẫn set eval mode
             self.set_evaluation_mode()
 
     def setup_logging(self, log_file):
@@ -470,3 +480,4 @@ class RLAgent:
             'violations': self.violation_counts,
             'any_violation': self.any_violation
         }
+
